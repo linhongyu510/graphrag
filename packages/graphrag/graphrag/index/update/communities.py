@@ -14,6 +14,8 @@ from graphrag.data_model.schemas import (
 def _update_and_merge_communities(
     old_communities: pd.DataFrame,
     delta_communities: pd.DataFrame,
+    entity_id_mapping: dict | None = None,
+    relationship_id_mapping: dict | None = None,
 ) -> tuple[pd.DataFrame, dict]:
     """Update and merge communities.
 
@@ -40,6 +42,19 @@ def _update_and_merge_communities(
         delta_communities["size"] = None
     if "period" not in delta_communities.columns:
         delta_communities["period"] = None
+
+    entity_id_mapping = entity_id_mapping or {}
+    relationship_id_mapping = relationship_id_mapping or {}
+
+    if entity_id_mapping:
+        delta_communities["entity_ids"] = delta_communities["entity_ids"].apply(
+            lambda values: _rewrite_membership_ids(values, entity_id_mapping)
+        )
+
+    if relationship_id_mapping:
+        delta_communities["relationship_ids"] = delta_communities[
+            "relationship_ids"
+        ].apply(lambda values: _rewrite_membership_ids(values, relationship_id_mapping))
 
     # Increment all community ids by the max of the old communities
     old_max_community_id = old_communities["community"].fillna(0).astype(int).max()
@@ -82,6 +97,15 @@ def _update_and_merge_communities(
         COMMUNITIES_FINAL_COLUMNS,
     ]
     return merged_communities, community_id_mapping
+
+
+def _rewrite_membership_ids(
+    values: list[str] | None, id_mapping: dict
+) -> list[str] | None:
+    """Rewrite list-valued ids using the surviving-id mapping."""
+    if values is None:
+        return values
+    return [id_mapping.get(value, value) for value in values]
 
 
 def _update_and_merge_community_reports(
