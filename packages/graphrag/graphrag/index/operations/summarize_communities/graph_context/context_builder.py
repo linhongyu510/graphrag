@@ -96,37 +96,20 @@ def _prepare_reports_at_level(
             claim_df.loc[:, schemas.CLAIM_SUBJECT].isin(nodes_set)
         ]
 
-    # Merge node and edge details
-    # Group edge details by node and aggregate into lists
-    source_edges = (
-        level_edge_df
-        .groupby(schemas.EDGE_SOURCE)
-        .agg({schemas.EDGE_DETAILS: "first"})
-        .reset_index()
-        .rename(columns={schemas.EDGE_SOURCE: schemas.TITLE})
-    )
+    # Merge node and edge details.
+    # Each edge is attached to both its source and target node; the downstream
+    # groupby(lambda x: list(x.dropna())) then collects all edges per node.
+    source_edges = level_edge_df.loc[
+        :, [schemas.EDGE_SOURCE, schemas.EDGE_DETAILS]
+    ].rename(columns={schemas.EDGE_SOURCE: schemas.TITLE})
+    target_edges = level_edge_df.loc[
+        :, [schemas.EDGE_TARGET, schemas.EDGE_DETAILS]
+    ].rename(columns={schemas.EDGE_TARGET: schemas.TITLE})
 
-    target_edges = (
-        level_edge_df
-        .groupby(schemas.EDGE_TARGET)
-        .agg({schemas.EDGE_DETAILS: "first"})
-        .reset_index()
-        .rename(columns={schemas.EDGE_TARGET: schemas.TITLE})
-    )
-
-    # Merge aggregated edges into the node DataFrame
     merged_node_df = level_node_df.merge(
-        source_edges, on=schemas.TITLE, how="left"
-    ).merge(target_edges, on=schemas.TITLE, how="left")
-
-    # Combine source and target edge details into a single column
-    merged_node_df.loc[:, schemas.EDGE_DETAILS] = merged_node_df.loc[
-        :, f"{schemas.EDGE_DETAILS}_x"
-    ].combine_first(merged_node_df.loc[:, f"{schemas.EDGE_DETAILS}_y"])
-
-    # Drop intermediate columns
-    merged_node_df.drop(
-        columns=[f"{schemas.EDGE_DETAILS}_x", f"{schemas.EDGE_DETAILS}_y"], inplace=True
+        pd.concat([source_edges, target_edges]),
+        on=schemas.TITLE,
+        how="left",
     )
 
     # Aggregate node and edge details
@@ -261,7 +244,6 @@ def build_level_context(
     result[schemas.CONTEXT_SIZE] = result.loc[:, schemas.CONTEXT_STRING].map(
         tokenizer.num_tokens
     )
-
     result[schemas.CONTEXT_EXCEED_FLAG] = False
     return result
 
@@ -273,7 +255,7 @@ def _drop_community_level(df: pd.DataFrame) -> pd.DataFrame:
 
 def _at_level(level: int, df: pd.DataFrame) -> pd.DataFrame:
     """Return records at the given level."""
-    return where_column_equals(df, schemas.COMMUNITY_LEVEL, level)
+    return where_column_equals(df, schemas.COMMUNITY_LEVEL)
 
 
 def _antijoin_reports(df: pd.DataFrame, reports: pd.DataFrame) -> pd.DataFrame:
@@ -302,7 +284,7 @@ def _build_mixed_context(
     return transform_series(
         series,
         lambda x: build_mixed_context(
-            x, tokenizer, max_context_tokens=max_context_tokens
+            x, tokenizer=tokenizer, max_context_tokens=max_context_tokens
         ),
     )
 
